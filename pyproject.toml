@@ -1,0 +1,17 @@
+[project]
+name = "open-arca"
+version = "0.1.0"
+description = "OpenARCA es un paquete de Python que tiene como objetivo proporcionar una interfaz fácil y gratuita para interactuar con el Web Service de ARCA. "
+readme = "README.md"
+authors = [
+    { name = "agusherrera99", email = "agustinherrera.dev@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+open-arca = "open_arca:main"
+
+[build-system]
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
