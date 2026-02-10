@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import Path, PosixPath
 
 
 class Paths:
@@ -40,5 +40,19 @@ class Paths:
     def __create_keeps(self):
         for dir in self.dirs:
             Path(dir / ".keep").touch(exist_ok=True)
+
+class Templates(Paths):
+    def __init__(self):
+        super().__init__()
+        self._path = self._root / "templates"
+        self._login_ticket_request = self._path / "login_ticket_request.xml"
+
+    @property
+    def path(self):
+        return self._path
+
+    @property
+    def login_ticket_request(self):
+        return self._login_ticket_request
 
 paths = Paths()

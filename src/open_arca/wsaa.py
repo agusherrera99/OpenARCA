@@ -10,14 +10,14 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 
-from .paths import paths
+from .paths import paths, PosixPath
 
 
-class WSASS:
+class WSAA:
     """
-    Autogestor de certificados para Servicios Web en los ambientes de homologación (Testing).
-    Permite crear certificados de prueba y definir las autorizaciones de acceso para los diferentes
-    Web Services de testing de ARCA
+    Autogestor de certificados para Servicios Web.
+    Permite crear certificados y definir las autorizaciones de acceso para los diferentes
+    Web Services de ARCA
     """
 
     def __init__(self, organization_name: str, common_name: str, serial_number: int):
@@ -26,14 +26,15 @@ class WSASS:
         self.serial_number = serial_number
 
         self._private_key: Optional[RSAPrivateKey] = None
-        self.private_key_path = paths.credentials_testing / "private_key.pem"
+        self.private_key_path: Optional[PosixPath]= None
 
         self._certificate_signing_request: Optional[Certificate] = None
-        self.certificate_signing_request_path = paths.credentials_testing / "certificate_signing_request.pem"
+        self.certificate_signing_request_path: Optional[PosixPath] = None
 
         self._certificate: Optional[certificate] = None
-        self.certificate_path = paths.credentials_testing / "certificate.pem"
+        self.certificate_path: Optional[PosixPath] = None
 
+    def create_certificates(self):
         if not self.private_key_path.exists():
             self.__generate_private_key()
         self._private_key = self.__load_private_key()
@@ -191,3 +192,15 @@ class WSASS:
         except Exception as error:
             logger.error(f"Al cargar certificado: {error} - {type(error)}")
             raise
+
+class Homologacion(WSAA):
+    """Ambiente de testing."""
+
+    def __init__(self, organization_name: str, common_name: str, serial_number: int):
+        super().__init__(organization_name, common_name, serial_number)
+        self.private_key_path = paths.credentials_testing / "private_key.pem"
+        self.certificate_signing_request_path = paths.credentials_testing / "certificate_signing_request.pem"
+        self.certificate_path = paths.credentials_testing / "certificate.pem"
+
+        self.create_certificates()
+
