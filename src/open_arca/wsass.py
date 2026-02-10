@@ -19,9 +19,11 @@ class WSASS:
 
     def __init__(self):
         self._private_key: Optional[RSAPrivateKey] = None
+        self.private_key_path = paths.credentials_testing / "private_key.pem"
 
-        if self._private_key is None:
+        if not self.private_key_path.exists():
             self.__generate_private_key()
+        self._private_key = self.__load_private_key()
 
     @property
     def private_key(self) -> Optional[RSAPrivateKey]:
@@ -37,15 +39,28 @@ class WSASS:
 
             private_key_bytes = private_key.private_bytes(
                 encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.PKCS8,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
                 encryption_algorithm=serialization.NoEncryption()
             )
 
             filepath = f"{paths.credentials_testing}/private_key.pem"
-            with open(filepath, "wb") as file:
-                file.write(private_key_bytes)
+            with open(filepath, "wb") as key_file:
+                key_file.write(private_key_bytes)
 
             logger.info("Clave privada generada exitosamente.")
         except Exception as error:
             logger.warning(f"Error al generar la clave privada: {error}")
             raise
+
+    def __load_private_key(self) -> RSAPrivateKey:
+        logger.info("Cargando clave privada...")
+
+        filepath = f"{paths.credentials_testing}/private_key.pem"
+        with open(filepath, "rb") as key_file:
+            private_key = serialization.load_pem_private_key(
+                key_file.read(),
+                password=None
+            )
+
+        logger.info("Clave privada cargada con éxito.")
+        return private_key
