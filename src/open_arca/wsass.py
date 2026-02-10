@@ -31,6 +31,9 @@ class WSASS:
         self._certificate_signing_request: Optional[Certificate] = None
         self.certificate_signing_request_path = paths.credentials_testing / "certificate_signing_request.pem"
 
+        self._certificate: Optional[certificate] = None
+        self.certificate_path = paths.credentials_testing / "certificate.pem"
+
         if not self.private_key_path.exists():
             self.__generate_private_key()
         self._private_key = self.__load_private_key()
@@ -39,9 +42,44 @@ class WSASS:
             self.__generate_certificate_signing_request()
         self._certificate_signing_request = self.__load_certificate_signing_request()
 
+        if not self.certificate_path.exists():
+            self.save_certificate()
+        self._certificate = self.__load_certificate()
+
     @property
     def private_key(self) -> Optional[RSAPrivateKey]:
         return self._private_key
+
+    @property
+    def certificate_signing_request(self) -> Optional[Certificate]:
+        return self._certificate_signing_request
+
+    @property
+    def certificate(self) -> Optional[Certificate]:
+        return self._certificate
+
+    def save_certificate(self):
+        public_certificate_signing_request = self.certificate_signing_request \
+            .public_key() \
+            .public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            )
+
+        print("Entra a https://wsass-homo.afip.gob.ar/wsass/portal/main.aspx")
+        print("Nuevo certificado -> Completa el 'Nombre simbólico del DN' -> Pega este Certificate Signing Request\n")
+        print(f"{public_certificate_signing_request.decode('utf-8')}\n")
+
+        raws = []
+        print("Pega acá el resultado luego de presionar 'Crear DN y obtener certificado':")
+        while True:
+            raw = input()
+            if not raw:
+                break
+            raws.append(raw)
+        certificate_bytes = bytes("\n".join(raws), "utf-8")
+        if self.__save_certificate(certificate_bytes):
+            print("Certificado guardado exitosamente.")
 
     def __generate_private_key(self):
         logger.info("Generando clave privada...")
@@ -122,4 +160,34 @@ class WSASS:
             raise
         except Exception as error:
             logger.error(f"Al cargar certificate signing request: {error} - {type(error)}")
+            raise
+
+    def __save_certificate(self, pem_data: bytes) -> Optional[bool]:
+        logger.info("Guardando certificado...")
+        try:
+            certificate = x509.load_pem_x509_certificate(pem_data)
+            filepath = f"{paths.credentials_testing}/certificate.pem"
+            with open(filepath, "wb") as crt_file:
+                crt_file.write(certificate.public_bytes(serialization.Encoding.PEM))
+            logger.info("Certificado guardado exitosamente.")
+            return True
+        except Exception as error:
+            logger.error(f"Al guardar certificado: {error} - {type(error)}")
+            raise
+
+    def __load_certificate(self) -> Certificate:
+        logger.info("Cargando certificado...")
+
+        filepath = f"{paths.credentials_testing}/certificate.pem"
+        try:
+            with open(filepath, "rb") as csr_file:
+                certificate = x509.load_pem_x509_certificate(csr_file.read())
+
+            logger.info("Certificado cargado con éxito.")
+            return certificate
+        except ValueError as error:
+            logger.error(f"(ValueError) Al cargar certificado: {error}")
+            raise
+        except Exception as error:
+            logger.error(f"Al cargar certificado: {error} - {type(error)}")
             raise
