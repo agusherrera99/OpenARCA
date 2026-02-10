@@ -1,0 +1,8 @@
+<loginTicketRequest>
+  <header>
+    <uniqueId></uniqueId>
+    <generationTime></generationTime>
+    <expirationTime></expirationTime>
+  </header>
+  <service></service>
+</loginTicketRequest>
