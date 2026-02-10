@@ -14,8 +14,8 @@ class Paths:
 
         self.dirs = [self._logs, self._credentials, self._credentials_testing]
 
-        self.create_dirs()
-        self.create_keeps()
+        self.__create_dirs()
+        self.__create_keeps()
 
     @property
     def root(self):
@@ -33,11 +33,11 @@ class Paths:
     def credentials_testing(self):
         return self._credentials_testing
 
-    def create_dirs(self):
+    def __create_dirs(self):
         for dir in self.dirs:
             dir.mkdir(exist_ok=True)
 
-    def create_keeps(self):
+    def __create_keeps(self):
         for dir in self.dirs:
             Path(dir / ".keep").touch(exist_ok=True)
 
