@@ -1,6 +1,8 @@
 import logging
 logger = logging.getLogger(__name__)
 
+from .paths import paths
+
 
 def main() -> None:
     logging.basicConfig(
