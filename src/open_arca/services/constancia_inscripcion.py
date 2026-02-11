@@ -23,7 +23,7 @@ class ConstanciaInscripcion:
     def obtener_informacion(self, cuit: str):
         homologacion = Homologacion("Agustín Herrera", "OpenARCAtest", "20419264300")
         token, sign = homologacion.get_ticket_access_authentications(self.service_name)
-        result = self.client.service.getPersona_V2(
+        result = self.client.service.getPersona_v2(
             token=token,
             sign=sign,
             cuitRepresentada=homologacion.serial_number,
