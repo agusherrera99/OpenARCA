@@ -1,8 +1,11 @@
 # Ignore pycache
-**/__pycache__
+src/open_arca/**/__pycache__
 
 # Ignore credentials files
-*.pem
+src/open_arca/credentials/testing/**/*.pem
 
 # Ignore log files
-*.log
+src/open_arca/logs/*.log
+
+# Ignore access ticket files
+src/open_arca/access_tickets/**/*.json
