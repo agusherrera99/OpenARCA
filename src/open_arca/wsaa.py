@@ -47,14 +47,20 @@ class WSAA:
         self._certificate: Optional[certificate] = None
         self.certificate_path: Optional[PosixPath] = None
 
-    def create_certificates(self):
+    def generate_certificates(self):
         if not self.private_key_path.exists():
             self.__generate_private_key()
-        self._private_key = self.__load_private_key()
 
         if not self.certificate_signing_request_path.exists():
             self.__generate_certificate_signing_request()
+
+    def load_certificates(self):
+        self._private_key = self.__load_private_key()
         self._certificate_signing_request = self.__load_certificate_signing_request()
+
+    def build(self):
+        self.generate_certificates()
+        self.load_certificates()
 
     @property
     def private_key(self) -> Optional[RSAPrivateKey]:
@@ -158,7 +164,7 @@ class Homologacion(WSAA):
         self.certificate_signing_request_path = self.credential_path.testing / "certificate_signing_request.pem"
         self.certificate_path = self.credential_path.testing / "certificate.pem"
 
-        self.create_certificates()
+        self.build()
 
         if not self.certificate_path.exists():
             self.save_certificate()
@@ -166,15 +172,13 @@ class Homologacion(WSAA):
 
     def save_certificate(self):
         public_certificate_signing_request = self.certificate_signing_request \
-            .public_key() \
             .public_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PublicFormat.SubjectPublicKeyInfo
-            )
+                encoding=serialization.Encoding.PEM
+            ).decode()
 
         print("Entra a https://wsass-homo.afip.gob.ar/wsass/portal/main.aspx")
         print("Nuevo certificado -> Completa el 'Nombre simbólico del DN' -> Pega este Certificate Signing Request\n")
-        print(f"{public_certificate_signing_request.decode('utf-8')}\n")
+        print(f"{public_certificate_signing_request}\n")
 
         raws = []
         print("Pega acá el resultado luego de presionar 'Crear DN y obtener certificado':")
