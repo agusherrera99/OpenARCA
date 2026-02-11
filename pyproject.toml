@@ -1,6 +1,6 @@
 [project]
 name = "open-arca"
-version = "0.1.1"
+version = "0.1.2"
 description = "OpenARCA es un paquete de Python que tiene como objetivo proporcionar una interfaz fácil y gratuita para interactuar con el Web Service de ARCA. "
 readme = "README.md"
 authors = [
