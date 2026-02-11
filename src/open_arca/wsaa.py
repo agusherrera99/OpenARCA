@@ -1,4 +1,3 @@
-import datetime
 import base64
 import json
 import random
@@ -8,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 import xml.etree.ElementTree as ET
 
+from datetime import datetime, timedelta, timezone
 from pathlib import PosixPath
 from typing import Optional
 
@@ -199,8 +199,8 @@ class Homologacion(WSAA):
             with open(cache_file, "r") as file:
                 ticket_access_data = json.load(file)
 
-            expiration = datetime.datetime.fromisoformat(ticket_access_data['expiration_time'])
-            if datetime.datetime.now() < (expiration - datetime.timedelta(minutes=10)):
+            expiration = datetime.fromisoformat(ticket_access_data['expiration_time'])
+            if datetime.now(timezone.utc) < (expiration - timedelta(minutes=10)):
                 logger.info(f"Usando ticket cacheado para {service_name}")
                 return ticket_access_data['token'], ticket_access_data['sign']
 
@@ -230,9 +230,9 @@ class Homologacion(WSAA):
         return token, sign
 
     def __create_access_request_ticket(self, service_name: str) -> str:
-        now = datetime.datetime.now() - datetime.timedelta(minutes=2)
+        now = datetime.now(timezone.utc) - timedelta(minutes=2)
         generation_time: str = now.isoformat().split(".")[0]
-        expiration_time: str = (now + datetime.timedelta(hours=12)).isoformat().split(".")[0]
+        expiration_time: str = (now + timedelta(hours=12)).isoformat().split(".")[0]
         unique_id = str(random.randint(1000, 999_999))
 
         tree = self.template_path.get("login_ticket_request.xml")
