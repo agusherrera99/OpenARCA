@@ -2,6 +2,7 @@
 src/open_arca/**/__pycache__
 
 # Ignore credentials files
+src/open_arca/credentials/*.pem
 src/open_arca/credentials/testing/**/*.pem
 
 # Ignore log files
