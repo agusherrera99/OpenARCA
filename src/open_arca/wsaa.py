@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from pathlib import PosixPath
 from time import ctime
-from typing import Optional
+from typing import ClassVar, Optional
 from zoneinfo import ZoneInfo
 
 from cryptography import x509
@@ -32,38 +32,27 @@ class WSAA:
     Permite crear certificados y definir las autorizaciones de acceso para los diferentes
     Web Services de ARCA
     """
-    access_ticket_path = AccessTicketPath()
-    credential_path = CredentialPath()
-    template_path = TemplatePath()
+    ACCESS_TICKET_PATH: ClassVar[AccessTicketPath] = AccessTicketPath()
+    CREDENTIAL_PATH: ClassVar[CredentialPath] = CredentialPath()
+    TEMPLATE_PATH: ClassVar[TemplatePath] = TemplatePath()
 
     def __init__(self, organization_name: str, common_name: str, serial_number: int):
         self.organization_name = organization_name
         self.common_name = common_name
         self.serial_number = serial_number
 
+        self.client: Optional[Client] = None
+
         self._private_key: Optional[RSAPrivateKey] = None
-        self.private_key_path: Optional[PosixPath]= None
+        self.private_key_path: Optional[PosixPath] = self.CREDENTIAL_PATH.path / "private_key.pem"
 
         self._certificate_signing_request: Optional[Certificate] = None
-        self.certificate_signing_request_path: Optional[PosixPath] = None
+        self.certificate_signing_request_path: Optional[PosixPath] = self.CREDENTIAL_PATH.path / "certificate_signing_request.pem"
 
-        self._certificate: Optional[certificate] = None
+        self._certificate: Optional[Certificate] = None
         self.certificate_path: Optional[PosixPath] = None
 
-    def generate_certificates(self):
-        if not self.private_key_path.exists():
-            self.__generate_private_key()
-
-        if not self.certificate_signing_request_path.exists():
-            self.__generate_certificate_signing_request()
-
-    def load_certificates(self):
-        self._private_key = self.__load_private_key()
-        self._certificate_signing_request = self.__load_certificate_signing_request()
-
-    def build(self):
-        self.generate_certificates()
-        self.load_certificates()
+        self.access_ticket_path: Optional[PosixPath] = None
 
     @property
     def private_key(self) -> Optional[RSAPrivateKey]:
@@ -76,6 +65,36 @@ class WSAA:
     @property
     def certificate(self) -> Optional[Certificate]:
         return self._certificate
+
+    def generate_certificates(self):
+        if not self.private_key_path.exists():
+            self._generate_private_key()
+
+        if not self.certificate_signing_request_path.exists():
+            self._generate_certificate_signing_request()
+
+    def load_certificates(self):
+        self._private_key = self._load_private_key()
+        self._certificate_signing_request = self._load_certificate_signing_request()
+
+    def build(self):
+        self.generate_certificates()
+        self.load_certificates()
+
+    def get_ticket_access_authentications(self, service_name: str):
+        filename = f"ta_{service_name}.json"
+        cache_file = self.access_ticket_path / filename
+
+        if cache_file.exists():
+            with open(cache_file, "r") as file:
+                ticket_access_data = json.load(file)
+
+            expiration = datetime.fromisoformat(ticket_access_data['expiration_time'])
+            if self._get_ntp_synced_datetime() < (expiration - timedelta(minutes=10)):
+                logger.info(f"Usando ticket cacheado para {service_name}")
+                return ticket_access_data['token'], ticket_access_data['sign']
+
+        return self._request_new_ticket_access_authentications(service_name)
 
     def _get_ntp_synced_datetime(self) -> datetime:
         logging.info("Obteniendo fecha sincronizada...")
@@ -95,7 +114,7 @@ class WSAA:
             logging.error(f"Al obtener la fecha sincronizada: {error} - {type(error)}")
             raise
 
-    def __generate_private_key(self):
+    def _generate_private_key(self):
         logger.info("Generando clave privada...")
         try:
             private_key = rsa.generate_private_key(
@@ -117,7 +136,7 @@ class WSAA:
             logger.error(f"Al generar la clave privada: {error} - {type(error)}")
             raise
 
-    def __load_private_key(self) -> RSAPrivateKey:
+    def _load_private_key(self) -> RSAPrivateKey:
         logger.info("Cargando clave privada...")
 
         try:
@@ -133,7 +152,7 @@ class WSAA:
             logger.error(f"Al cargar clave privada: {error} - {type(error)}")
             raise
 
-    def __generate_certificate_signing_request(self):
+    def _generate_certificate_signing_request(self):
         logger.info("Generando certificate signing request...")
         try:
             certificate_signing_request = x509.CertificateSigningRequestBuilder() \
@@ -156,7 +175,7 @@ class WSAA:
             logger.error(f"Al generar el certificate signing request: {error} - {type(error)}")
             raise
 
-    def __load_certificate_signing_request(self) -> Certificate:
+    def _load_certificate_signing_request(self) -> Certificate:
         logger.info("Cargando certificate signing request...")
 
         try:
@@ -172,6 +191,86 @@ class WSAA:
             logger.error(f"Al cargar certificate signing request: {error} - {type(error)}")
             raise
 
+    def _save_certificate(self, pem_data: bytes) -> Optional[bool]:
+        logger.info("Guardando certificado...")
+        try:
+            certificate = x509.load_pem_x509_certificate(pem_data)
+            with open(self.certificate_path, "wb") as crt_file:
+                crt_file.write(certificate.public_bytes(serialization.Encoding.PEM))
+            logger.info("Certificado guardado exitosamente.")
+            return True
+        except Exception as error:
+            logger.error(f"Al guardar certificado: {error} - {type(error)}")
+            raise
+
+    def _load_certificate(self) -> Certificate:
+        logger.info("Cargando certificado...")
+
+        try:
+            with open(self.certificate_path, "rb") as csr_file:
+                certificate = x509.load_pem_x509_certificate(csr_file.read())
+
+            logger.info("Certificado cargado con éxito.")
+            return certificate
+        except ValueError as error:
+            logger.error(f"(ValueError) Al cargar certificado: {error}")
+            raise
+        except Exception as error:
+            logger.error(f"Al cargar certificado: {error} - {type(error)}")
+            raise
+
+    def _create_access_request_ticket(self, service_name: str) -> str:
+        now = self._get_ntp_synced_datetime() - timedelta(minutes=5)
+        generation_time: str = now.isoformat().split(".")[0]
+        expiration_time: str = (now + timedelta(hours=12)).isoformat().split(".")[0]
+        unique_id = str(random.randint(1000, 999_999))
+
+        tree = self.TEMPLATE_PATH.get("login_ticket_request.xml")
+        root = tree.getroot()
+        header = root.find(".//header")
+        header.find(".//uniqueId").text = unique_id
+        header.find(".//generationTime").text = generation_time
+        header.find(".//expirationTime").text = expiration_time
+
+        service = tree.find(".//service")
+        service.text = service_name
+        result = ET.tostring(root, encoding="utf-8", method="xml", xml_declaration=True)
+
+        return result
+
+    def _sign_access_request_ticket(self, service_name: str):
+        options = [pkcs7.PKCS7Options.Binary]
+        builder = pkcs7.PKCS7SignatureBuilder(
+            self._create_access_request_ticket(service_name),
+            [(self.certificate, self.private_key, hashes.SHA256(), None)]
+        )
+        return builder.sign(serialization.Encoding.DER, options)
+
+    def _request_new_ticket_access_authentications(self, service_name: str):
+        logger.info("Solicitando nuevo ticket de acceso para {service_name}...")
+        signed_access_request_ticket = self._sign_access_request_ticket(service_name)
+
+        response = self.client.service.loginCms(
+            base64.b64encode(signed_access_request_ticket).decode("utf-8")
+        )
+
+        tree = ET.fromstring(response.encode("utf-8"))
+        token = tree.find(".//token").text
+        sign = tree.find(".//sign").text
+        generation_time = tree.find(".//generationTime").text
+        expiration_time = tree.find(".//expirationTime").text
+
+        cache_file = self.access_ticket_path / f"ta_{service_name}.json"
+        with open(cache_file, "w") as file:
+            json.dump({
+                "token": token,
+                "sign": sign,
+                "generation_time": generation_time,
+                "expiration_time": expiration_time
+            }, file)
+
+        return token, sign
+
 
 class Homologacion(WSAA):
     """Ambiente de testing."""
@@ -181,15 +280,14 @@ class Homologacion(WSAA):
         self.wsdl = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms?WSDL"
         self.client = Client(self.wsdl)
 
-        self.private_key_path = self.credential_path.testing / "private_key.pem"
-        self.certificate_signing_request_path = self.credential_path.testing / "certificate_signing_request.pem"
-        self.certificate_path = self.credential_path.testing / "certificate.pem"
+        self.certificate_path = self.CREDENTIAL_PATH.testing / "certificate.pem"
+        self.access_ticket_path = self.ACCESS_TICKET_PATH.testing
 
         self.build()
 
         if not self.certificate_path.exists():
             self.save_certificate()
-        self._certificate = self.__load_certificate()
+        self._certificate = self._load_certificate()
 
     def save_certificate(self):
         public_certificate_signing_request = self.certificate_signing_request \
@@ -209,100 +307,7 @@ class Homologacion(WSAA):
                 break
             raws.append(raw)
         certificate_bytes = bytes("\n".join(raws), "utf-8")
-        if self.__save_certificate(certificate_bytes):
+        if self._save_certificate(certificate_bytes):
             print("Certificado guardado exitosamente.")
 
-    def get_ticket_access_authentications(self, service_name: str):
-        filename = f"ta_{service_name}.json"
-        cache_file = self.access_ticket_path.testing / filename
 
-        if cache_file.exists():
-            with open(cache_file, "r") as file:
-                ticket_access_data = json.load(file)
-
-            expiration = datetime.fromisoformat(ticket_access_data['expiration_time'])
-            if self._get_ntp_synced_datetime() < (expiration - timedelta(minutes=10)):
-                logger.info(f"Usando ticket cacheado para {service_name}")
-                return ticket_access_data['token'], ticket_access_data['sign']
-
-        return self._request_new_ticket_access_authentications(service_name)
-
-    def _request_new_ticket_access_authentications(self, service_name: str):
-        logger.info("Solicitando nuevo ticket de acceso para {service_name}...")
-        signed_access_request_ticket = self.__sign_access_request_ticket(service_name)
-
-        response = self.client.service.loginCms(
-            base64.b64encode(signed_access_request_ticket).decode("utf-8")
-        )
-
-        tree = ET.fromstring(response.encode("utf-8"))
-        token = tree.find(".//token").text
-        sign = tree.find(".//sign").text
-        generation_time = tree.find(".//generationTime").text
-        expiration_time = tree.find(".//expirationTime").text
-
-        cache_file = self.access_ticket_path.testing / f"ta_{service_name}.json"
-        with open(cache_file, "w") as file:
-            json.dump({
-                "token": token,
-                "sign": sign,
-                "generation_time": generation_time,
-                "expiration_time": expiration_time
-            }, file)
-
-        return token, sign
-
-    def __create_access_request_ticket(self, service_name: str) -> str:
-        now = self._get_ntp_synced_datetime() - timedelta(minutes=5)
-        generation_time: str = now.isoformat().split(".")[0]
-        expiration_time: str = (now + timedelta(hours=12)).isoformat().split(".")[0]
-        unique_id = str(random.randint(1000, 999_999))
-
-        tree = self.template_path.get("login_ticket_request.xml")
-        root = tree.getroot()
-        header = root.find(".//header")
-        header.find(".//uniqueId").text = unique_id
-        header.find(".//generationTime").text = generation_time
-        header.find(".//expirationTime").text = expiration_time
-
-        service = tree.find(".//service")
-        service.text = service_name
-        result = ET.tostring(root, encoding="utf-8", method="xml", xml_declaration=True)
-
-        return result
-
-    def __sign_access_request_ticket(self, service_name: str):
-        options = [pkcs7.PKCS7Options.Binary]
-        builder = pkcs7.PKCS7SignatureBuilder(
-            self.__create_access_request_ticket(service_name),
-            [(self.certificate, self.private_key, hashes.SHA256(), None)]
-        )
-        return builder.sign(serialization.Encoding.DER, options)
-
-    def __save_certificate(self, pem_data: bytes) -> Optional[bool]:
-        logger.info("Guardando certificado...")
-        try:
-            certificate = x509.load_pem_x509_certificate(pem_data)
-            with open(self.certificate_path, "wb") as crt_file:
-                crt_file.write(certificate.public_bytes(serialization.Encoding.PEM))
-            logger.info("Certificado guardado exitosamente.")
-            return True
-        except Exception as error:
-            logger.error(f"Al guardar certificado: {error} - {type(error)}")
-            raise
-
-    def __load_certificate(self) -> Certificate:
-        logger.info("Cargando certificado...")
-
-        try:
-            with open(self.certificate_path, "rb") as csr_file:
-                certificate = x509.load_pem_x509_certificate(csr_file.read())
-
-            logger.info("Certificado cargado con éxito.")
-            return certificate
-        except ValueError as error:
-            logger.error(f"(ValueError) Al cargar certificado: {error}")
-            raise
-        except Exception as error:
-            logger.error(f"Al cargar certificado: {error} - {type(error)}")
-            raise
