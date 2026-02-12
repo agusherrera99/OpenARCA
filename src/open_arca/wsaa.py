@@ -7,9 +7,11 @@ logger = logging.getLogger(__name__)
 
 import xml.etree.ElementTree as ET
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import PosixPath
+from time import ctime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from cryptography import x509
 from cryptography.x509 import Certificate
@@ -18,6 +20,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.serialization import pkcs7
+from ntplib import NTPClient
 from zeep import Client
 
 from .routes import AccessTicketPath, CredentialPath, TemplatePath
@@ -73,6 +76,24 @@ class WSAA:
     @property
     def certificate(self) -> Optional[Certificate]:
         return self._certificate
+
+    def _get_ntp_synced_datetime(self) -> datetime:
+        logging.info("Obteniendo fecha sincronizada...")
+        try:
+            client = NTPClient()
+            response = client.request("time.afip.gov.ar", version=3)
+
+            date_string = ctime(response.tx_time)
+            format_string = "%a %b %d %H:%M:%S %Y"
+
+            naive_datetime = datetime.strptime(date_string, format_string)
+            aware_datetime = naive_datetime.replace(tzinfo=ZoneInfo("America/Argentina/Buenos_Aires"))
+
+            logging.info("Fecha sincronizada obtenida correctamente.")
+            return aware_datetime
+        except Exception as error:
+            logging.error(f"Al obtener la fecha sincronizada: {error} - {type(error)}")
+            raise
 
     def __generate_private_key(self):
         logger.info("Generando clave privada...")
@@ -155,7 +176,7 @@ class WSAA:
 class Homologacion(WSAA):
     """Ambiente de testing."""
 
-    def __init__(self, organization_name: str, common_name: str, serial_number: str):
+    def __init__(self, organization_name: str, common_name: str, serial_number: int):
         super().__init__(organization_name, common_name, serial_number)
         self.wsdl = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms?WSDL"
         self.client = Client(self.wsdl)
@@ -200,7 +221,7 @@ class Homologacion(WSAA):
                 ticket_access_data = json.load(file)
 
             expiration = datetime.fromisoformat(ticket_access_data['expiration_time'])
-            if datetime.now(timezone.utc) < (expiration - timedelta(minutes=10)):
+            if self._get_ntp_synced_datetime() < (expiration - timedelta(minutes=10)):
                 logger.info(f"Usando ticket cacheado para {service_name}")
                 return ticket_access_data['token'], ticket_access_data['sign']
 
@@ -217,6 +238,7 @@ class Homologacion(WSAA):
         tree = ET.fromstring(response.encode("utf-8"))
         token = tree.find(".//token").text
         sign = tree.find(".//sign").text
+        generation_time = tree.find(".//generationTime").text
         expiration_time = tree.find(".//expirationTime").text
 
         cache_file = self.access_ticket_path.testing / f"ta_{service_name}.json"
@@ -224,13 +246,14 @@ class Homologacion(WSAA):
             json.dump({
                 "token": token,
                 "sign": sign,
+                "generation_time": generation_time,
                 "expiration_time": expiration_time
             }, file)
 
         return token, sign
 
     def __create_access_request_ticket(self, service_name: str) -> str:
-        now = datetime.now(timezone.utc) - timedelta(minutes=2)
+        now = self._get_ntp_synced_datetime() - timedelta(minutes=5)
         generation_time: str = now.isoformat().split(".")[0]
         expiration_time: str = (now + timedelta(hours=12)).isoformat().split(".")[0]
         unique_id = str(random.randint(1000, 999_999))
