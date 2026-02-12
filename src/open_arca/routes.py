@@ -53,6 +53,7 @@ class CredentialPath(ProjectPath):
         super().__init__()
         self._path = self._root / "credentials"
         self._testing = self._path / "testing"
+        self._production = self._path / "production"
 
         self.dirs = [self._path, self._testing]
 
@@ -65,6 +66,10 @@ class CredentialPath(ProjectPath):
     @property
     def testing(self):
         return self._testing
+
+    @property
+    def production(self):
+        return self._production
 
 
 class AccessTicketPath(ProjectPath):
@@ -72,6 +77,7 @@ class AccessTicketPath(ProjectPath):
         super().__init__()
         self._path = self._root / "access_tickets"
         self._testing = self._path / "testing"
+        self._production = self._path / "production"
 
         self.dirs = [self._path, self._testing]
 
@@ -84,6 +90,10 @@ class AccessTicketPath(ProjectPath):
     @property
     def testing(self):
         return self._testing
+
+    @property
+    def production(self):
+        return self._production
 
 
 class TemplatePath(ProjectPath):
