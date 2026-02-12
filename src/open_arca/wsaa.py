@@ -191,6 +191,16 @@ class WSAA:
             logger.error(f"Al cargar certificate signing request: {error} - {type(error)}")
             raise
 
+    def _require_certificate_bytes(self) -> bytes:
+        raws = []
+        while True:
+            raw = input()
+            if not raw:
+                break
+            raws.append(raw)
+        certificate_bytes = bytes("\n".join(raws), "utf-8")
+        return certificate_bytes
+
     def _save_certificate(self, pem_data: bytes) -> Optional[bool]:
         logger.info("Guardando certificado...")
         try:
@@ -272,12 +282,44 @@ class WSAA:
         return token, sign
 
 
+class Produccion(WSAA):
+    def __init__(self, organization_name: str, common_name: str, serial_number: int):
+        super().__init__(organization_name, common_name, serial_number)
+        self.wsdl: str = "https://wsaa.afip.gov.ar/ws/services/LoginCms?WSDL"
+        self.client = Client(self.wsdl)
+
+        self.certificate_path = self.CREDENTIAL_PATH.production / "certificate.pem"
+        self.access_ticket_path = self.ACCESS_TICKET_PATH.production
+
+        self.build()
+
+    def save_certificate(self):
+        public_certificate_signing_request = self.certificate_signing_request \
+            .public_bytes(
+                encoding=serialization.Encoding.PEM
+            ).decode()
+
+        print("Si el servicio 'Administración de Certificados Digitales' no está habilidado, ingresa a https://serviciosweb.afip.gob.ar/claveFiscal/adminRel/main.aspx para habilitarlo.")
+        print("Nueva Relación -> Buscar -> Seleccionar el servicio 'Administración de Certificados Digitales' -> Buscar -> Ingresar CUIT/CUIL/CDI del Representante -> Buscar -> Confirmar -> Salir del sistema\n")
+
+        print("Ingresar a https://serviciosweb.afip.gob.ar/clavefiscal/adminrel/verCertificado.aspx")
+        print("Seleccionar contribuyente -> Agregar alias -> Elegir un nombre para el alias")
+        print("Sube este archivo CSR:")
+        print(self.certificate_signing_request_path)
+        print("Agregar Alias -> Ver -> Descargar Certificado")
+
+        print("Pega acá el contenido del certificado descargado:")
+        certificate_bytes = self._require_certificate_bytes()
+        if self._save_certificate(certificate_bytes):
+            print("Certificado guardado exitosamente.")
+
+
 class Homologacion(WSAA):
     """Ambiente de testing."""
 
     def __init__(self, organization_name: str, common_name: str, serial_number: int):
         super().__init__(organization_name, common_name, serial_number)
-        self.wsdl = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms?WSDL"
+        self.wsdl: str = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms?WSDL"
         self.client = Client(self.wsdl)
 
         self.certificate_path = self.CREDENTIAL_PATH.testing / "certificate.pem"
@@ -289,25 +331,18 @@ class Homologacion(WSAA):
             self.save_certificate()
         self._certificate = self._load_certificate()
 
+
     def save_certificate(self):
         public_certificate_signing_request = self.certificate_signing_request \
             .public_bytes(
                 encoding=serialization.Encoding.PEM
             ).decode()
 
-        print("Entra a https://wsass-homo.afip.gob.ar/wsass/portal/main.aspx")
+        print("Ingresa a https://wsass-homo.afip.gob.ar/wsass/portal/main.aspx")
         print("Nuevo certificado -> Completa el 'Nombre simbólico del DN' -> Pega este Certificate Signing Request\n")
         print(f"{public_certificate_signing_request}\n")
 
-        raws = []
         print("Pega acá el resultado luego de presionar 'Crear DN y obtener certificado':")
-        while True:
-            raw = input()
-            if not raw:
-                break
-            raws.append(raw)
-        certificate_bytes = bytes("\n".join(raws), "utf-8")
+        certificate_bytes = self._require_certificate_bytes()
         if self._save_certificate(certificate_bytes):
             print("Certificado guardado exitosamente.")
-
-
