@@ -3,20 +3,35 @@ logger = logging.getLogger(__name__)
 
 from zeep import Client
 
-from ..wsaa import Homologacion
+from ..wsaa import WSAA
 
 
-# NOTE: Por ahora solo trabajamos con homologación, más adelante agrego producción
-class ConstanciaInscripcion:
+class ARCAService:
+    def __init__(self, wsaa_instance: WSAA, wsdl_url: str, service_name: str):
+        self.wsaa = wsaa_instance
+        self.wsdl = wsdl_url
+        self.client = Client(self.wsdl)
+        self.service_name = service_name
+
+    def _get_auth_payload(self):
+        token, sign = self.wsaa.get_ticket_access_authentications(self.service_name)
+        return {
+            "token": token,
+            "sign": sign,
+            "cuitRepresentada": self.wsaa.serial_number
+        }
+
+
+class ConstanciaInscripcion(ARCAService):
     """
     Datos de un contribuyente relacionados con su
     constancia de inscripción.
     """
 
-    def __init__(self):
-        self.wsdl = "https://awshomo.afip.gov.ar/sr-padron/webservices/personaServiceA5?WSDL"
-        self.client = Client(self.wsdl)
-        self.service_name: str = "ws_sr_constancia_inscripcion"
+    def __init__(self, wsaa_instance: WSAA, testing: bool = False):
+        wsdl = "https://awshomo.afip.gov.ar/sr-padron/webservices/personaServiceA5?WSDL" if testing else "https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA5?WSDL"
+        service_name: str = "ws_sr_constancia_inscripcion"
+        super().__init__(wsaa_instance, wsdl, service_name)
 
     def dummy(self):
         """
@@ -36,15 +51,13 @@ class ConstanciaInscripcion:
         constancia de inscripción, del contribuyente solicitado.
         """
 
-        homologacion = Homologacion("Agustín Herrera", "OpenARCAtest", 20419264300)
-        token, sign = homologacion.get_ticket_access_authentications(self.service_name)
-        result = self.client.service.getPersona_v2(
-            token=token,
-            sign=sign,
-            cuitRepresentada=homologacion.serial_number,
+        auth = self._get_auth_payload()
+        return self.client.service.getPersona_v2(
+            token=auth["token"],
+            sign=auth["sign"],
+            cuitRepresentada=auth["cuitRepresentada"],
             idPersona=cuit
         )
-        return result
 
     def obtener_personas(self, cuits: list[int]):
         """
@@ -52,12 +65,10 @@ class ConstanciaInscripcion:
         para una lista de hasta 250 claves tributarias.
         """
 
-        homologacion = Homologacion("Agustin Herrera", "OpenARCAtest", 20419264300)
-        token, sign = homologacion.get_ticket_access_authentications(self.service_name)
-        results = self.client.service.getPersonaList_v2(
-            token=token,
-            sign=sign,
-            cuitRepresentada=homologacion.serial_number,
+        auth = self._get_auth_payload()
+        return self.client.service.getPersonaList_v2(
+            token=auth["token"],
+            sign=auth["sign"],
+            cuitRepresentada=auth["cuitRepresentada"],
             idPersona=cuits
         )
-        return results
