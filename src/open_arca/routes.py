@@ -55,7 +55,7 @@ class CredentialPath(ProjectPath):
         self._testing = self._path / "testing"
         self._production = self._path / "production"
 
-        self.dirs = [self._path, self._testing]
+        self.dirs = [self._path, self._testing, self._production]
 
         self.build()
 
@@ -79,7 +79,7 @@ class AccessTicketPath(ProjectPath):
         self._testing = self._path / "testing"
         self._production = self._path / "production"
 
-        self.dirs = [self._path, self._testing]
+        self.dirs = [self._path, self._testing, self._production]
 
         self.build()
 
