@@ -66,20 +66,16 @@ class WSAA:
     def certificate(self) -> Optional[Certificate]:
         return self._certificate
 
-    def generate_certificates(self):
+    def build(self):
         if not self.private_key_path.exists():
             self._generate_private_key()
+        else:
+            self._private_key = self._load_private_key()
 
         if not self.certificate_signing_request_path.exists():
             self._generate_certificate_signing_request()
-
-    def load_certificates(self):
-        self._private_key = self._load_private_key()
-        self._certificate_signing_request = self._load_certificate_signing_request()
-
-    def build(self):
-        self.generate_certificates()
-        self.load_certificates()
+        else:
+            self._certificate_signing_request = self._load_certificate_signing_request()
 
     def get_ticket_access_authentications(self, service_name: str):
         filename = f"ta_{service_name}.json"
@@ -127,6 +123,7 @@ class WSAA:
                 format=serialization.PrivateFormat.TraditionalOpenSSL,
                 encryption_algorithm=serialization.NoEncryption()
             )
+            self._private_key = private_key
 
             with open(self.private_key_path, "wb") as key_file:
                 key_file.write(private_key_bytes)
@@ -138,7 +135,6 @@ class WSAA:
 
     def _load_private_key(self) -> RSAPrivateKey:
         logger.info("Cargando clave privada...")
-
         try:
             with open(self.private_key_path, "rb") as key_file:
                 private_key = serialization.load_pem_private_key(
@@ -165,6 +161,7 @@ class WSAA:
                 ])
             ) \
             .sign(self._private_key, hashes.SHA256())
+            self._certificate_signing_request = certificate_signing_request
 
             with open(self.certificate_signing_request_path, "wb") as csr_file:
                 csr_file.write(
@@ -177,7 +174,6 @@ class WSAA:
 
     def _load_certificate_signing_request(self) -> Certificate:
         logger.info("Cargando certificate signing request...")
-
         try:
             with open(self.certificate_signing_request_path, "rb") as csr_file:
                 certificate_signing_request = x509.load_pem_x509_csr(csr_file.read())
@@ -205,6 +201,8 @@ class WSAA:
         logger.info("Guardando certificado...")
         try:
             certificate = x509.load_pem_x509_certificate(pem_data)
+            self._certificate = certificate
+
             with open(self.certificate_path, "wb") as crt_file:
                 crt_file.write(certificate.public_bytes(serialization.Encoding.PEM))
             logger.info("Certificado guardado exitosamente.")
@@ -215,7 +213,6 @@ class WSAA:
 
     def _load_certificate(self) -> Certificate:
         logger.info("Cargando certificado...")
-
         try:
             with open(self.certificate_path, "rb") as csr_file:
                 certificate = x509.load_pem_x509_certificate(csr_file.read())
@@ -293,6 +290,10 @@ class Produccion(WSAA):
 
         self.build()
 
+        if not self.certificate_path.exists():
+            self.save_certificate()
+        self._certificate = self._load_certificate()
+
     def save_certificate(self):
         public_certificate_signing_request = self.certificate_signing_request \
             .public_bytes(
@@ -346,3 +347,9 @@ class Homologacion(WSAA):
         certificate_bytes = self._require_certificate_bytes()
         if self._save_certificate(certificate_bytes):
             print("Certificado guardado exitosamente.")
+
+
+def get_wsaa_client(testing: bool, **kwargs) -> WSAA:
+    if testing:
+        return Homologacion(**kwargs)
+    return Produccion(**kwargs)
