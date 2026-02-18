@@ -13,8 +13,11 @@ class ProjectPath:
     Administra la creación y obtención de las rutas disponibles en el sistema
     """
 
-    def __init__(self):
-        self._root = Path(__file__).resolve().parent
+    def __init__(self, base_path = None):
+        if base_path is None:
+            self._root = Path.cwd()
+        else:
+            self._root = Path(base_path)
         self.dirs = []
 
     def build(self):
