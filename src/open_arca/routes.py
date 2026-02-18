@@ -102,6 +102,7 @@ class AccessTicketPath(ProjectPath):
 class TemplatePath(ProjectPath):
     def __init__(self):
         super().__init__()
+        self._root = self._root = Path(__file__).resolve().parent
         self._path = self._root / "templates"
 
         self.dirs = [self._path]
